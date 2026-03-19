@@ -1,6 +1,6 @@
 import csv
 from django.core.management.base import BaseCommand
-from app.models import Match, Referee, Team, Division
+from app.models import Match, Referee, Team, Season
 from app.utils import parse_date
 
 
@@ -13,52 +13,54 @@ class Command(BaseCommand):
         with open(path, 'r', encoding='utf-8') as f:
             reader = list(csv.DictReader(f))
 
-        div_names = {row['Div'] for row in reader if row.get('Div')}
-        team_names = {row['HomeTeam'] for row in reader if row.get('HomeTeam')} | \
-                     {row['AwayTeam'] for row in reader if row.get('AwayTeam')}
-        ref_names = {row['Referee'] for row in reader if row.get('Referee')}
+        for row in reader:
+            date_parts = row['Date'].split('/')
+            year = int("20" + date_parts[2]) if len(date_parts[2]) == 2 else int(date_parts[2])
 
-        for name in div_names:
-            Division.objects.get_or_create(name=name)
-        for name in team_names:
-            Team.objects.get_or_create(name=name)
-        for name in ref_names:
-            Referee.objects.get_or_create(name=name)
+            Season.objects.get_or_create(
+                name=f"{year}-{year + 1}",
+                division=row['Div'],
+                defaults={'start_year': year, 'end_year': year + 1}
+            )
+            Team.objects.get_or_create(name=row['HomeTeam'])
+            Team.objects.get_or_create(name=row['AwayTeam'])
+            if row.get('Referee'):
+                Referee.objects.get_or_create(name=row['Referee'])
 
-        divs = {d.name: d for d in Division.objects.all()}
+        seasons = {(s.name, s.division): s for s in Season.objects.all()}
         teams = {t.name: t for t in Team.objects.all()}
         refs = {r.name: r for r in Referee.objects.all()}
 
         match_buffer = []
         for item in reader:
             formatted_date = parse_date(item.get('Date'))
+            year = formatted_date.year
+            season_key = (f"{year}-{year + 1}", item['Div'])
 
             match_buffer.append(Match(
+                season=seasons.get(season_key),
                 date=formatted_date,
-                div=divs.get(item['Div']),
                 home_team=teams.get(item['HomeTeam']),
                 away_team=teams.get(item['AwayTeam']),
                 referee=refs.get(item['Referee']),
-                fthg=item.get('FTHG') or 0,
-                ftag=item.get('FTAG') or 0,
-                ftr=item.get('FTR') or 'D',
-                hthg=item.get('HTHG') or 0,
-                htag=item.get('HTAG') or 0,
-                hs=item.get('HS') or 0,
-                a_s=item.get('AS') or 0,
-                hst=item.get('HST') or 0,
-                ast=item.get('AST') or 0,
-                hf=item.get('HF') or 0,
-                af=item.get('AF') or 0,
-                hc=item.get('HC') or 0,
-                ac=item.get('AC') or 0,
-                hy=item.get('HY') or 0,
-                ay=item.get('AY') or 0,
-                hr=item.get('HR') or 0,
-                ar=item.get('AR') or 0,
+                fthg=int(item.get('FTHG', 0)),
+                ftag=int(item.get('FTAG', 0)),
+                ftr=item.get('FTR', 'D'),
+                hthg=int(item.get('HTHG', 0)) if item.get('HTHG') else None,
+                htag=int(item.get('HTAG', 0)) if item.get('HTAG') else None,
+                hs=int(item.get('HS', 0)),
+                a_s=int(item.get('AS', 0)),
+                hst=int(item.get('HST', 0)),
+                ast=int(item.get('AST', 0)),
+                hf=int(item.get('HF', 0)),
+                af=int(item.get('AF', 0)),
+                hc=int(item.get('HC', 0)),
+                ac=int(item.get('AC', 0)),
+                hy=int(item.get('HY', 0)),
+                ay=int(item.get('AY', 0)),
+                hr=int(item.get('HR', 0)),
+                ar=int(item.get('AR', 0)),
             ))
 
-        batch_size = 1000
-        Match.objects.bulk_create(match_buffer, batch_size=batch_size)
-
-        self.stdout.write(self.style.SUCCESS(f"✅ {len(match_buffer)} ta match muvaffaqiyatli saqlandi!"))
+        Match.objects.bulk_create(match_buffer, batch_size=100)
+        self.stdout.write(self.style.SUCCESS(f"✅ {len(match_buffer)} ta match saqlandi!"))
